@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/luisya22/lazyffmpeg/video"
 )
 
@@ -23,8 +25,13 @@ type convertModel struct {
 	selectedFormat     string
 	cursor             int
 	textInput          textinput.Model
+	spinner            spinner.Model
 	err                error
 }
+
+type errMsg struct{ err error }
+
+type videoProcessed struct{}
 
 type clearErrorMsg struct{}
 
@@ -49,14 +56,17 @@ func NewConvertModel() (tea.Model, tea.Cmd) {
 	ti.Placeholder = "Filename"
 	ti.Width = 30
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
 	m := convertModel{
 		filepicker: fp,
-		stage:      0,
-		formatChoices: []string{
-			"mp4", "webm", "mkv", "mov", "avi", "flv", "wmv",
+		stage:      0, formatChoices: []string{"mp4", "webm", "mkv", "mov", "avi", "flv", "wmv",
 			"mpg", "mpeg", "ts",
 		},
 		textInput: ti,
+		spinner:   s,
 	}
 
 	return m, m.Init()
@@ -80,6 +90,11 @@ func (m convertModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case clearErrorMsg:
 		m.err = nil
+	case videoProcessed:
+		m.stage = 5
+		return m, tea.Tick(1*time.Second, func(time.Time) tea.Msg {
+			return tea.Quit()
+		})
 	}
 
 	var cmd tea.Cmd
@@ -157,16 +172,31 @@ func (m convertModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter, tea.KeyCtrlC, tea.KeyEsc:
 				filename := m.textInput.Value()
 
-				video.Convert(m.selectedFile, m.selectedOutputPath, filename, m.selectedFormat)
-				return m, tea.Quit
+				m.stage = 4
+				return m, tea.Batch(m.spinner.Tick, convertVideo(m.selectedFile, m.selectedOutputPath, filename, m.selectedFormat))
 			}
 
 			m.textInput, cmd = m.textInput.Update(msg)
 			return m, cmd
 		}
+	} else if m.stage == 4 {
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 
 	return m, cmd
+}
+
+func convertVideo(selectedFile string, selectedOutputPath string, filename string, selectedFormat string) tea.Cmd {
+
+	return func() tea.Msg {
+		err := video.Convert(selectedFile, selectedOutputPath, filename, selectedFormat)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		return videoProcessed{}
+	}
 }
 
 func (m convertModel) View() string {
@@ -187,6 +217,7 @@ func (m convertModel) View() string {
 		}
 
 		s.WriteString("\n\n" + m.filepicker.View() + "\n")
+		s.WriteString("[Press ↑↓ or (k,j) to navigate, 'Enter' to select, 'q' to quit]")
 	} else if m.stage == 1 {
 		if m.err != nil {
 			s.WriteString(m.filepicker.Styles.DisabledFile.Render(m.err.Error()))
@@ -198,7 +229,7 @@ func (m convertModel) View() string {
 		m.stage = 1
 
 		s.WriteString("\n\n" + m.filepicker.View() + "\n")
-
+		s.WriteString("[Press ↑↓ or (k,j) to navigate, 'Enter' to select, 'q' to quit, after selecting folder press 'Space' to confirm and continue]")
 	} else if m.stage == 2 {
 		s.WriteString("Select an output format:\n\n")
 		for i, c := range m.formatChoices {
@@ -213,8 +244,12 @@ func (m convertModel) View() string {
 		s.WriteString("\n-----------------------\n")
 		s.WriteString("[Pres ↑↓ or (k,j) to navigate, 'Enter' or 'Space' to select, 'q' to quit]")
 	} else if m.stage == 3 {
-		s.WriteString("Enter file name (output)")
+		s.WriteString("Enter file name (output) ")
 		s.WriteString(m.textInput.View())
+	} else if m.stage == 4 {
+		s.WriteString(fmt.Sprintf("%s Working on your video\n", m.spinner.View()))
+	} else if m.stage == 5 {
+		s.WriteString("✅ Your video was successfully processed!\n")
 	}
 
 	return s.String()

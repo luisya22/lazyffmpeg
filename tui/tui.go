@@ -2,9 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/luisya22/lazyffmpeg/video"
 )
 
 type model struct {
@@ -55,7 +55,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	s := "Lazy FFmpeg - Select a Task\n-----------------------\n"
+	var s strings.Builder
+	s.WriteString("Lazy FFmpeg - Select a Task\n-----------------------\n")
 
 	for i, choice := range m.choices {
 		cursor := " "
@@ -63,17 +64,11 @@ func (m model) View() string {
 			cursor = ">"
 		}
 
-		s += fmt.Sprintf("%s %s\n", cursor, choice)
+		s.WriteString(fmt.Sprintf("%s %s\n", cursor, choice))
 	}
 
-	s += "\n-----------------------\n"
-	s += "[Pres ↑↓ or (k,j) to navigate, 'Enter' or 'Space' to select, 'q' to quit]"
+	s.WriteString("\n-----------------------\n")
+	s.WriteString("[Press ↑↓ or (k,j) to navigate, 'Enter' or 'Space' to select, 'q' to quit]")
 
-	return s
-}
-
-func convertVideo() tea.Msg {
-	video.Convert("/home/luismatos/Downloads/file_example_MP4_1920_18MG.mp4", "./", "output", "mkv")
-
-	return "Success"
+	return s.String()
 }
